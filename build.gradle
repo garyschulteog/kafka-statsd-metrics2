@@ -5,6 +5,7 @@ buildscript {
     }
     dependencies {
         classpath 'com.github.jengelman.gradle.plugins:shadow:2.+'
+        classpath 'com.bmuschko:gradle-docker-plugin:3.2.3'
     }
 }
 
@@ -57,4 +58,33 @@ shadowJar {
         exclude(dependency('org.apache.kafka:kafka_2.11:1.0.0'))
         exclude(dependency('org.slf4j:slf4j-log4j12'))
     }
+}
+/** docker image generation **/
+apply plugin: 'com.bmuschko.docker-remote-api'
+
+import com.bmuschko.gradle.docker.tasks.image.Dockerfile
+import com.bmuschko.gradle.docker.tasks.image.DockerBuildImage
+
+/* for deloying to minikube */
+//docker {
+//    url = "tcp://192.168.64.10:2376"
+//    certPath = file("/Users/garyschulte/.minikube/certs")
+//    apiVersion = "1.23"
+//}
+
+task createDockerfile(type: Dockerfile, dependsOn: 'shadowJar') {
+    destFile = project.file('build/Dockerfile')
+    from "confluentinc/cp-kafka:4.0.0"
+    maintainer 'engineering@opengov.com'
+    environmentVariable("KAFKA_METRIC_REPORTERS", "com.airbnb.kafka.kafka09.StatsdMetricsReporter")
+    environmentVariable("KAFKA_EXTERNAL_KAFKA_STATSD_TAG_ENABLED", "true")
+    environmentVariable("KAFKA_EXTERNAL_KAFKA_STATSD_REPORTER_ENABLED", "true")
+    environmentVariable("KAFKA_EXTERNAL_KAFKA_STATSD_HOST", "localhost")
+    environmentVariable("KAFKA_EXTERNAL_KAFKA_STATSD_PORT", "8125")
+    addFile("libs/kafka-statsd-metrics2-0.5.2-all.jar", "/usr/share/java/kafka/")
+}
+
+task buildImage(type: DockerBuildImage, dependsOn: 'createDockerfile') {
+    inputDir = createDockerfile.destFile.parentFile
+    tag = "opengovorg/bogus-service:0.0.1"
 }
