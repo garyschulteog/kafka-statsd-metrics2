@@ -1,0 +1,11 @@
+---
+language: java
+
+env:
+  - TERM=dumb
+
+jdk:
+  - oraclejdk8
+
+script:
+  - ./gradlew check --info

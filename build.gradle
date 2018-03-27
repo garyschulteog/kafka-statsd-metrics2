@@ -1,0 +1,90 @@
+buildscript {
+    repositories {
+        jcenter()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.github.jengelman.gradle.plugins:shadow:2.+'
+        classpath 'com.bmuschko:gradle-docker-plugin:3.2.3'
+    }
+}
+
+defaultTasks 'build'
+
+apply plugin: 'java'
+apply plugin: 'idea'
+apply plugin: 'com.github.johnrengelman.shadow'
+
+group = 'com.airbnb'
+description = 'StatsD Support for Kafka Metrics (kafka version: 0.8 and 0.9+)'
+
+repositories {
+    mavenCentral()
+    maven { url "http://dl.bintray.com/airbnb/jars" }
+}
+
+dependencies {
+    compile 'com.indeed:java-dogstatsd-client:2.0.11'
+    compile 'org.apache.kafka:kafka_2.11:1.0.0'
+    compile 'org.slf4j:slf4j-log4j12:+'
+
+    testCompile('junit:junit:4.11',
+            'org.easymock:easymock:3.2',
+            "org.mockito:mockito-core:1.+")
+}
+
+compileJava {
+    options.setDeprecation true
+    options.encoding = 'UTF-8'
+}
+
+configurations {
+    //manually excludes some unnecessary dependencies
+    compile.exclude module: 'zookeeper'
+    compile.exclude module: 'zkclient'
+    compile.exclude module: 'javax'
+    compile.exclude module: 'jline'
+    compile.exclude module: 'jms'
+    compile.exclude module: 'jmxri'
+    compile.exclude module: 'jmxtools'
+    compile.exclude module: 'mail'
+}
+
+shadowJar {
+    exclude 'META-INF/*.DSA'
+    exclude 'META-INF/*.RSA'
+    exclude 'META-INF/maven/*'
+    dependencies {
+        exclude(dependency('org.apache.kafka:kafka_2.11:1.0.0'))
+        exclude(dependency('org.slf4j:slf4j-log4j12'))
+    }
+}
+/** docker image generation **/
+apply plugin: 'com.bmuschko.docker-remote-api'
+
+import com.bmuschko.gradle.docker.tasks.image.Dockerfile
+import com.bmuschko.gradle.docker.tasks.image.DockerBuildImage
+
+///* for deloying to minikube */
+//docker {
+//    url = "tcp://192.168.64.10:2376"
+//    certPath = file("/Users/garyschulte/.minikube/certs")
+//    apiVersion = "1.23"
+//}
+
+task createDockerfile(type: Dockerfile, dependsOn: 'shadowJar') {
+    destFile = project.file('build/Dockerfile')
+    from "confluentinc/cp-kafka:4.0.0"
+    maintainer 'engineering@opengov.com'
+    environmentVariable("KAFKA_METRIC_REPORTERS", "com.airbnb.kafka.kafka09.StatsdMetricsReporter")
+    environmentVariable("KAFKA_EXTERNAL_KAFKA_STATSD_TAG_ENABLED", "true")
+    environmentVariable("KAFKA_EXTERNAL_KAFKA_STATSD_REPORTER_ENABLED", "true")
+    environmentVariable("KAFKA_EXTERNAL_KAFKA_STATSD_HOST", "localhost")
+    environmentVariable("KAFKA_EXTERNAL_KAFKA_STATSD_PORT", "8125")
+    addFile("libs/kafka-statsd-metrics2-0.5.2-all.jar", "/usr/share/java/kafka/")
+}
+
+task buildImage(type: DockerBuildImage, dependsOn: 'createDockerfile') {
+    inputDir = createDockerfile.destFile.parentFile
+    tag = "opengovorg/og-kafka:0.1"
+}
